@@ -125,11 +125,24 @@
             if (lines.length <= 1) return []; // Handle empty or header-only data
             const headers = lines[0].split(',').map(header => header.trim().replace(/"/g, ''));
             const data = lines.slice(1).map(line => {
-                const values = line.match(/(?:,|\n|^)(?:"([^"]*)"|([^",\n]*))/g).map(match => {
-                    if (!match) return 'N/A';
-                    const value = match.trim().replace(/^(?:,)?/g, '');
-                    return value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1) : value;
-                });
+                const values = [];
+                let inQuote = false;
+                let currentField = '';
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    if (char === '"') {
+                        inQuote = !inQuote;
+                        continue;
+                    }
+                    if (char === ',' && !inQuote) {
+                        values.push(currentField.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+                        currentField = '';
+                    } else {
+                        currentField += char;
+                    }
+                }
+                values.push(currentField.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+                
                 const obj = {};
                 headers.forEach((header, i) => {
                     obj[header] = values[i] || 'N/A';
