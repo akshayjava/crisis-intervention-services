@@ -118,46 +118,18 @@
 
     </div>
 
-    <script>
-        // Function to parse the CSV data
-        function parseCSV(csv) {
-            const lines = csv.trim().split('\n');
-            if (lines.length <= 1) return []; // Handle empty or header-only data
-            const headers = lines[0].split(',').map(header => header.trim().replace(/"/g, ''));
-            const data = lines.slice(1).map(line => {
-                const values = [];
-                let inQuote = false;
-                let currentField = '';
-                for (let i = 0; i < line.length; i++) {
-                    const char = line[i];
-                    if (char === '"') {
-                        inQuote = !inQuote;
-                        continue;
-                    }
-                    if (char === ',' && !inQuote) {
-                        values.push(currentField.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
-                        currentField = '';
-                    } else {
-                        currentField += char;
-                    }
-                }
-                values.push(currentField.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
-                
-                const obj = {};
-                headers.forEach((header, i) => {
-                    obj[header] = values[i] || 'N/A';
-                });
-                return obj;
-            });
-            return data;
-        }
+    <!-- PapaParse Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
 
+    <script>
         let allServices = [];
         const tableBody = document.querySelector('#servicesTable tbody');
         const searchInput = document.getElementById('searchInput');
         const filterSelect = document.getElementById('filterSelect');
         const noResults = document.getElementById('noResults');
         const loadingDiv = document.getElementById('loading');
+        
+        const columnKeys = ["Country", "Region", "Crisis Category", "Service Name", "Contact Method", "Languages Supported", "Hours of Operation", "Website"];
 
         // Function to render the table with filtered data
         function renderTable(services) {
@@ -171,20 +143,21 @@
                 const row = document.createElement('tr');
                 row.classList.add('hover:bg-gray-100', 'transition-colors');
                 
-                // Create a cell for each piece of data
-                const keys = ["Country", "Region", "Crisis Category", "Service Name", "Contact Method", "Languages Supported", "Hours of Operation", "Website"];
-                keys.forEach(key => {
+                // Create a cell for each piece of data using the column keys
+                columnKeys.forEach(key => {
                     const cell = document.createElement('td');
                     cell.classList.add('px-6', 'py-4', 'whitespace-nowrap', 'text-sm', 'text-gray-800');
-                    if (key === 'Website' && service[key] && service[key] !== 'N/A') {
+                    const value = service[key] || '';
+                    
+                    if (key === 'Website' && value.trim() !== '') {
                         const link = document.createElement('a');
-                        link.href = service[key].startsWith('http') ? service[key] : `http://${service[key]}`;
-                        link.textContent = service[key];
+                        link.href = value.startsWith('http') ? value : `http://${value}`;
+                        link.textContent = value;
                         link.target = "_blank";
                         link.classList.add('text-blue-600', 'hover:underline');
                         cell.appendChild(link);
                     } else {
-                        cell.textContent = service[key] || 'N/A';
+                        cell.textContent = value.trim() !== '' ? value : 'N/A';
                     }
                     row.appendChild(cell);
                 });
@@ -200,10 +173,10 @@
             
             const filteredData = allServices.filter(service => {
                 const matchesSearch = searchTerm === '' ||
-                    service["Country"].toLowerCase().includes(searchTerm) ||
-                    service["Region"].toLowerCase().includes(searchTerm) ||
-                    service["Crisis Category"].toLowerCase().includes(searchTerm) ||
-                    service["Service Name"].toLowerCase().includes(searchTerm);
+                    (service["Country"] && service["Country"].toLowerCase().includes(searchTerm)) ||
+                    (service["Region"] && service["Region"].toLowerCase().includes(searchTerm)) ||
+                    (service["Crisis Category"] && service["Crisis Category"].toLowerCase().includes(searchTerm)) ||
+                    (service["Service Name"] && service["Service Name"].toLowerCase().includes(searchTerm));
                 
                 const matchesRegion = selectedRegion === '' ||
                     service["Region"] === selectedRegion;
@@ -214,22 +187,32 @@
             renderTable(filteredData);
         }
 
-        // Async function to fetch data and render the table
-        async function fetchAndRenderData() {
+        // Async function to fetch data and render the table using PapaParse
+        function fetchAndRenderData() {
             loadingDiv.classList.remove('hidden');
             noResults.classList.add('hidden');
-            try {
-                const googleSheetUrl = 'https://docs.google.com/spreadsheets/d/10_lJ4cmRYnFO25Pxwsl1xM9VStsoOMXzpGnObIg93YQ/gviz/tq?tqx=out:csv&gid=0';
-                const response = await fetch(googleSheetUrl);
-                const csvText = await response.text();
-                allServices = parseCSV(csvText);
-                filterServices(); // Call filter to render the full table initially
-            } catch (error) {
-                console.error("Failed to fetch or parse data:", error);
-                loadingDiv.textContent = "Failed to load directory. Please try again later.";
-            } finally {
-                loadingDiv.classList.add('hidden');
-            }
+            
+            // This is the new, more reliable URL format for a direct CSV export
+            const googleSheetUrl = 'https://docs.google.com/spreadsheets/d/10_lJ4cmRYnFO25Pxwsl1xM9VStsoOMXzpGnObIg93YQ/export?format=csv&gid=0';
+            
+            Papa.parse(googleSheetUrl, {
+                download: true,
+                header: true,
+                complete: function(results) {
+                    if (results.data) {
+                        allServices = results.data.filter(row => Object.values(row).some(val => val.trim() !== ''));
+                    } else {
+                        allServices = [];
+                    }
+                    filterServices();
+                    loadingDiv.classList.add('hidden');
+                },
+                error: function(err, file) {
+                    console.error("Failed to fetch or parse data:", err);
+                    loadingDiv.textContent = "Failed to load directory. Please try again later.";
+                    loadingDiv.classList.add('text-red-500');
+                }
+            });
         }
 
         // Add event listeners for search and filter
